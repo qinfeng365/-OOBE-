@@ -1,0 +1,186 @@
+/* Fluent/Windows 11 global design for OOBE */
+
+/* Font stack: prefer Segoe UI Variable on Windows 11, fallback to Segoe UI */
+@supports (font-variation-settings: normal) {
+  :root {
+    --font-family: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, "Microsoft YaHei", "PingFang SC", Roboto, Arial, sans-serif;
+  }
+}
+@supports not (font-variation-settings: normal) {
+  :root {
+    --font-family: "Segoe UI", system-ui, -apple-system, "Microsoft YaHei", "PingFang SC", Roboto, Arial, sans-serif;
+  }
+}
+
+/* Fluent tokens (approx.) */
+:root {
+  --accent: #0078D4;             /* Microsoft Fluent primary */
+  --accent-hover: #106EBE;
+  --accent-pressed: #005A9E;
+
+  --neutral-foreground: #1F1F1F; /* Text */
+  --neutral-foreground-secondary: #515151;
+  --neutral-background: #F5F7FB; /* Page bg (light) */
+  --neutral-card: rgba(255,255,255,0.88); /* Acrylic-like brighter */
+  --neutral-card-border: rgba(255,255,255,0.70);
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  --shadow-md: 0 8px 24px rgba(0,0,0,0.10);
+  --shadow-sm: 0 2px 10px rgba(0,0,0,0.08);
+
+  --focus: #5AA3E8; /* Focus ring on Windows 11 */
+}
+
+
+/* Page baseline */
+html, body {
+  height: 100%;
+  background: radial-gradient(1200px 650px at 20% 12%, #EAF4FF 0%, transparent 58%),
+              radial-gradient(900px 520px at 82% 68%, #F1F7FF 0%, transparent 58%),
+              var(--neutral-background);
+  color: var(--neutral-foreground);
+  font-family: var(--font-family);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Layout container helpers (use when needed) */
+.oobe-container {
+  min-height: 100vh;
+  padding: 48px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.oobe-card {
+  width: auto;
+  max-width: 95vw;
+  background: var(--neutral-card);
+  border: 1px solid var(--neutral-card-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: saturate(130%) blur(12px);
+  -webkit-backdrop-filter: saturate(130%) blur(12px);
+  overflow: hidden;
+}
+.oobe-card-header {
+  padding: 28px 28px 12px 28px;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+}
+.oobe-title {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+.oobe-subtitle {
+  margin-top: 6px;
+  color: var(--neutral-foreground-secondary);
+  font-size: 14px;
+}
+.oobe-content {
+  padding: 24px 28px 8px 28px;
+  line-height: 1.7;
+  font-size: 16px;
+}
+.oobe-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 24px 28px 28px 28px;
+}
+
+/* Fluent buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  transition: all .15s ease;
+  user-select: none;
+}
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.btn-primary:active { background: var(--accent-pressed); border-color: var(--accent-pressed); }
+.btn-secondary {
+  background: transparent;
+  color: var(--neutral-foreground);
+  border-color: rgba(0,0,0,0.14);
+}
+.btn-secondary:hover { background: rgba(0,0,0,0.04); }
+.btn-secondary:active { background: rgba(0,0,0,0.08); }
+.btn[disabled], .btn:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+/* Focus visibility (keyboard) */
+*:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Ant Design overrides to match Fluent style */
+.ant-card {
+  background: var(--neutral-card) !important;
+  border: 1px solid var(--neutral-card-border);
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-md);
+  backdrop-filter: saturate(130%) blur(12px);
+  -webkit-backdrop-filter: saturate(130%) blur(12px);
+}
+.ant-card-head {
+  border-bottom: 1px solid rgba(0,0,0,0.06) !important;
+  padding: 20px 24px !important;
+}
+.ant-card-head-title {
+  font-size: 22px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.2px;
+}
+.ant-card-body {
+  padding: 20px 24px !important;
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.ant-btn {
+  border-radius: var(--radius-md) !important;
+  font-weight: 600 !important;
+  height: 36px !important;
+  padding: 0 14px !important;
+}
+.ant-btn-primary {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+}
+.ant-btn-primary:hover { background: var(--accent-hover) !important; border-color: var(--accent-hover) !important; }
+.ant-btn-primary:active { background: var(--accent-pressed) !important; border-color: var(--accent-pressed) !important; }
+
+.ant-input, .ant-input-number, .ant-select-selector, .ant-textarea {
+  border-radius: var(--radius-md) !important;
+}
+.ant-table {
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+/* Compact spacing for admin page */
+.admin-page {
+  padding: 24px;
+}

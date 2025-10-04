@@ -1,0 +1,432 @@
+'use client';
+
+import React, { useEffect, useState, useRef } from 'react';
+import axios from 'axios';
+import { Button, Input, message, Spin, Alert, Space, Divider } from 'antd';
+import { useParams, useRouter } from 'next/navigation';
+
+interface OobePage {
+  id: number;
+  pageNumber: number;
+  title: string;
+  content: string;
+}
+
+type BlockType = 'title' | 'text' | 'image';
+
+interface Block {
+  id: string;
+  type: BlockType;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  content: string; // text or image url
+}
+
+const DEFAULT_CANVAS_WIDTH = 1024;
+const DEFAULT_CANVAS_HEIGHT = 576; // 16:9
+
+interface CanvasSettings {
+  width: number;
+  height: number;
+  backgroundUrl: string;
+}
+
+const DesignerPage: React.FC = () => {
+  const params = useParams();
+  const router = useRouter();
+  const id = Number(params.id);
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState<OobePage | null>(null);
+  const [blocks, setBlocks] = useState<Block[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [canvasSettings, setCanvasSettings] = useState<CanvasSettings>({
+    width: DEFAULT_CANVAS_WIDTH,
+    height: DEFAULT_CANVAS_HEIGHT,
+    backgroundUrl: '',
+  });
+
+  const draggingRef = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null);
+  const canvasRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const initFromPage = (p: OobePage) => {
+      setPage(p);
+      try {
+        const parsed = JSON.parse(p.content);
+        if (Array.isArray(parsed)) {
+          setBlocks(parsed as Block[]);
+        } else if (parsed && typeof parsed === 'object' && Array.isArray((parsed as any).blocks)) {
+          const doc = parsed as any;
+          setBlocks(doc.blocks as Block[]);
+          const c = doc.canvas || {};
+          setCanvasSettings({
+            width: typeof c.width === 'number' ? c.width : DEFAULT_CANVAS_WIDTH,
+            height: typeof c.height === 'number' ? c.height : DEFAULT_CANVAS_HEIGHT,
+            backgroundUrl: typeof c.backgroundUrl === 'string' ? c.backgroundUrl : '',
+          });
+        } else {
+          throw new Error('invalid');
+        }
+        return;
+      } catch {
+        const defaults: Block[] = [];
+        if (p.title) {
+          defaults.push({
+            id: genId(),
+            type: 'title',
+            x: 64,
+            y: 64,
+            w: 640,
+            h: 80,
+            content: p.title,
+          });
+        }
+        if (p.content) {
+          defaults.push({
+            id: genId(),
+            type: 'text',
+            x: 64,
+            y: 168,
+            w: 800,
+            h: 240,
+            content: p.content,
+          });
+        }
+        setBlocks(defaults);
+        setCanvasSettings({
+          width: DEFAULT_CANVAS_WIDTH,
+          height: DEFAULT_CANVAS_HEIGHT,
+          backgroundUrl: '',
+        });
+      }
+    };
+
+    const load = async () => {
+      setLoading(true);
+      try {
+        const resp = await axios.get<OobePage>(`http://localhost:3000/api/v1/oobe-pages/${id}`);
+        initFromPage(resp.data);
+        setError(null);
+      } catch (e1) {
+        console.warn('Fetch by id failed, trying match by pageNumber...', e1);
+        try {
+          const listResp = await axios.get<OobePage[]>(`http://localhost:3000/api/v1/oobe-pages`);
+          const list = listResp.data;
+          const byId = list.find(p => p.id === id);
+          const byPageNumber = list.find(p => p.pageNumber === id);
+          const p = byId ?? byPageNumber ?? null;
+          if (p) {
+            initFromPage(p);
+            setError(null);
+          } else {
+            setError('Failed to load page');
+          }
+        } catch (e2) {
+          console.error(e2);
+          setError('Failed to load page');
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [id]);
+
+  const addBlock = (type: BlockType) => {
+    const base: Block = {
+      id: genId(),
+      type,
+      x: 64,
+      y: 64,
+      w: type === 'image' ? 320 : 640,
+      h: type === 'image' ? 180 : type === 'title' ? 80 : 160,
+      content: type === 'image' ? 'https://via.placeholder.com/640x360?text=Image' : (type === 'title' ? 'Title' : 'Text...'),
+    };
+    setBlocks(prev => [...prev, base]);
+    setSelectedId(base.id);
+  };
+
+  const onMouseDownBlock = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    const block = blocks.find(b => b.id === id);
+    if (!block) return;
+    const canvasRect = canvasRef.current?.getBoundingClientRect();
+    if (!canvasRect) return;
+    const mouseX = e.clientX - canvasRect.left;
+    const mouseY = e.clientY - canvasRect.top;
+    draggingRef.current = { id, offsetX: mouseX - block.x, offsetY: mouseY - block.y };
+    setSelectedId(id);
+  };
+
+  const onMouseMoveCanvas = (e: React.MouseEvent) => {
+    if (!draggingRef.current) return;
+    const canvasRect = canvasRef.current?.getBoundingClientRect();
+    if (!canvasRect) return;
+    const mouseX = e.clientX - canvasRect.left;
+    const mouseY = e.clientY - canvasRect.top;
+    setBlocks(prev =>
+      prev.map(b => {
+        if (b.id !== draggingRef.current!.id) return b;
+        let nx = mouseX - draggingRef.current!.offsetX;
+        let ny = mouseY - draggingRef.current!.offsetY;
+        // keep within canvas
+        nx = Math.max(0, Math.min(nx, canvasSettings.width - b.w));
+        ny = Math.max(0, Math.min(ny, canvasSettings.height - b.h));
+        return { ...b, x: nx, y: ny };
+      }),
+    );
+  };
+
+  const onMouseUpCanvas = () => {
+    draggingRef.current = null;
+  };
+
+  const updateSelected = (patch: Partial<Block>) => {
+    if (!selectedId) return;
+    setBlocks(prev => prev.map(b => (b.id === selectedId ? { ...b, ...patch } : b)));
+  };
+
+  const onInputText = (id: string, e: React.FormEvent<HTMLDivElement>) => {
+    const text = (e.target as HTMLDivElement).innerText;
+    setBlocks(prev => prev.map(b => (b.id === id ? { ...b, content: text } : b)));
+  };
+
+  const onSave = async () => {
+    if (!page) return;
+    try {
+      // sync title from first title block if exists
+      const titleBlock = blocks.find(b => b.type === 'title');
+      const newTitle = titleBlock ? titleBlock.content : page.title;
+
+      const payload = {
+        title: newTitle,
+        content: JSON.stringify({ canvas: canvasSettings, blocks }),
+      };
+      await axios.patch(`http://localhost:3000/api/v1/oobe-pages/${page.id}`, payload);
+      message.success('Saved successfully');
+    } catch (e) {
+      console.error(e);
+      message.error('Save failed');
+    }
+  };
+
+  const onBack = () => {
+    router.push('/admin');
+  };
+
+  if (loading) {
+    return (
+      <div className="oobe-container">
+        <Spin size="large" />
+      </div>
+    );
+  }
+  if (error) {
+    return <Alert type="error" message="Error" description={error} showIcon />;
+  }
+  if (!page) {
+    return <Alert type="error" message="Error" description="Page not found" showIcon />;
+  }
+
+  const sel = blocks.find(b => b.id === selectedId) || null;
+
+  return (
+    <div className="oobe-container" style={{ gap: 24, flexDirection: 'column' }}>
+      <div style={{ width: canvasSettings.width, maxWidth: '95vw', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Space>
+          <Button onClick={onBack}>Back</Button>
+          <Button type="primary" onClick={onSave}>Save</Button>
+        </Space>
+        <Space>
+          <Button onClick={() => addBlock('title')}>Add Title</Button>
+          <Button onClick={() => addBlock('text')}>Add Text</Button>
+          <Button onClick={() => addBlock('image')}>Add Image</Button>
+        </Space>
+      </div>
+
+      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
+        {/* Canvas */}
+        <div
+          ref={canvasRef}
+          className="oobe-card"
+          style={{
+            position: 'relative',
+            width: canvasSettings.width,
+            height: canvasSettings.height,
+            maxWidth: '95vw',
+            backgroundImage: canvasSettings.backgroundUrl ? `url(${canvasSettings.backgroundUrl})` : undefined,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+          }}
+          onMouseMove={onMouseMoveCanvas}
+          onMouseUp={onMouseUpCanvas}
+          onMouseLeave={onMouseUpCanvas}
+          onClick={() => setSelectedId(null)}
+        >
+          {blocks.map((b) => (
+            <div
+              key={b.id}
+              onMouseDown={(e) => onMouseDownBlock(e, b.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedId(b.id);
+              }}
+              style={{
+                position: 'absolute',
+                left: b.x,
+                top: b.y,
+                width: b.w,
+                height: b.h,
+                border: selectedId === b.id ? '2px solid #5AA3E8' : '1px solid rgba(0,0,0,0.14)',
+                borderRadius: 8,
+                background: b.type === 'image' ? 'transparent' : 'rgba(255,255,255,0.85)',
+                boxShadow: selectedId === b.id ? '0 0 0 2px rgba(90,163,232,0.25)' : 'none',
+                padding: b.type === 'image' ? 0 : 12,
+                overflow: 'hidden',
+                cursor: 'move',
+              }}
+            >
+              {b.type === 'title' && (
+                <div
+                  contentEditable
+                  suppressContentEditableWarning
+                  onInput={(e) => onInputText(b.id, e)}
+                  style={{ fontSize: 32, fontWeight: 700, lineHeight: 1.2, outline: 'none' }}
+                >
+                  {b.content}
+                </div>
+              )}
+              {b.type === 'text' && (
+                <div
+                  contentEditable
+                  suppressContentEditableWarning
+                  onInput={(e) => onInputText(b.id, e)}
+                  style={{ fontSize: 18, lineHeight: 1.7, outline: 'none', height: '100%' }}
+                >
+                  {b.content}
+                </div>
+              )}
+              {b.type === 'image' && (
+                <img
+                  src={b.content}
+                  alt="block-img"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 8 }}
+                />
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Properties panel */}
+        <div className="oobe-card" style={{ width: 340, padding: 16 }}>
+          <div className="oobe-title">Properties</div>
+          <Divider style={{ margin: '12px 0' }} />
+          {!sel && <div style={{ color: 'var(--neutral-foreground-secondary)' }}>Select a block on canvas to edit its properties</div>}
+          {sel && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div style={{ gridColumn: '1 / span 2', marginBottom: 8, color: 'var(--neutral-foreground-secondary)' }}>
+                Type: {sel.type}
+              </div>
+
+              <label>X</label>
+              <Input
+                type="number"
+                value={sel.x}
+                onChange={(e) =>
+                  updateSelected({ x: clamp(Number(e.target.value), 0, canvasSettings.width - sel.w) })
+                }
+              />
+
+              <label>Y</label>
+              <Input
+                type="number"
+                value={sel.y}
+                onChange={(e) =>
+                  updateSelected({ y: clamp(Number(e.target.value), 0, canvasSettings.height - sel.h) })
+                }
+              />
+
+              <label>W</label>
+              <Input
+                type="number"
+                value={sel.w}
+                onChange={(e) =>
+                  updateSelected({ w: clamp(Number(e.target.value), 40, canvasSettings.width - sel.x) })
+                }
+              />
+
+              <label>H</label>
+              <Input
+                type="number"
+                value={sel.h}
+                onChange={(e) =>
+                  updateSelected({ h: clamp(Number(e.target.value), 40, canvasSettings.height - sel.y) })
+                }
+              />
+
+              {sel.type === 'image' && (
+                <>
+                  <div style={{ gridColumn: '1 / span 2' }}>Image URL</div>
+                  <Input
+                    style={{ gridColumn: '1 / span 2' }}
+                    value={sel.content}
+                    onChange={(e) => updateSelected({ content: e.target.value })}
+                    placeholder="https://example.com/image.jpg"
+                  />
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Canvas settings */}
+        <div className="oobe-card" style={{ width: 340, padding: 16 }}>
+          <div className="oobe-title">Canvas</div>
+          <Divider style={{ margin: '12px 0' }} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <label>Width</label>
+            <Input
+              type="number"
+              value={canvasSettings.width}
+              onChange={(e) =>
+                setCanvasSettings((s) => ({ ...s, width: clamp(Number(e.target.value), 320, 1920) }))
+              }
+            />
+
+            <label>Height</label>
+            <Input
+              type="number"
+              value={canvasSettings.height}
+              onChange={(e) =>
+                setCanvasSettings((s) => ({ ...s, height: clamp(Number(e.target.value), 180, 1080) }))
+              }
+            />
+
+            <div style={{ gridColumn: '1 / span 2' }}>Background URL</div>
+            <Input
+              style={{ gridColumn: '1 / span 2' }}
+              value={canvasSettings.backgroundUrl}
+              onChange={(e) => setCanvasSettings((s) => ({ ...s, backgroundUrl: e.target.value }))}
+              placeholder="https://example.com/background.jpg"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+function clamp(n: number, min: number, max: number) {
+  if (Number.isNaN(n)) return min;
+  return Math.max(min, Math.min(n, max));
+}
+
+function genId() {
+  return Math.random().toString(36).slice(2, 10);
+}
+
+export default DesignerPage;
